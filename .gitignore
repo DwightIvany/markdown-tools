@@ -1,0 +1,9 @@
+desktop.ini
+.obsidian/
+.~lock.*#
+*.pyc
+__pycache__/
+*.exe
+
+# Ignore Claude Code folder
+.claude/
