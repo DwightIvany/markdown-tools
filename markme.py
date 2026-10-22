@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
@@ -39,7 +40,6 @@ READERS = {
 
 # extension -> friendly message instead of converting
 NOT_CONVERTIBLE = {
-    ".doc": "legacy .doc is not supported by pandoc - open in Word/LibreOffice and save as .docx",
     ".markdown": "already Markdown",
     ".md": "already Markdown",
     ".pdf": "pandoc does not read PDF - see software/python/convert-to-md.py",
@@ -70,7 +70,25 @@ def find_pandoc() -> str | None:
     return None
 
 
-def convert_file(pandoc: str, path: Path, force: bool) -> tuple[bool, str]:
+def find_soffice() -> str | None:
+    """Locate soffice.exe (LibreOffice): SOFFICE env var, PATH, then common install spots."""
+    env = os.environ.get("SOFFICE")
+    if env and Path(env).is_file():
+        return env
+    on_path = shutil.which("soffice")
+    if on_path:
+        return on_path
+    candidates = [
+        Path(r"C:\Program Files\LibreOffice\program\soffice.exe"),
+        Path(r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"),
+    ]
+    for cand in candidates:
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
+def convert_file(pandoc: str, soffice: str | None, path: Path, force: bool) -> tuple[bool, str]:
     """Convert one file. Returns (ok, message) - message is a note or error."""
     ext = path.suffix.lower()
     if ext in NOT_CONVERTIBLE:
@@ -81,16 +99,44 @@ def convert_file(pandoc: str, path: Path, force: bool) -> tuple[bool, str]:
     if out.exists() and not force:
         return False, f"skipped ({out.name} exists - turn on Overwrite)"
 
+    # pandoc does not read legacy .doc: have LibreOffice turn it into a
+    # temp .docx first. A private profile keeps the conversion synchronous
+    # even when LibreOffice is already running.
+    source = path
+    tmpdir = None
+    if ext == ".doc":
+        if not soffice:
+            return False, "LibreOffice not found - install it to convert .doc, or save the file as .docx"
+        tmpdir = Path(tempfile.mkdtemp(prefix="markme-"))
+        source = tmpdir / (path.stem + ".docx")
+        try:
+            proc = subprocess.run(
+                [soffice, f"-env:UserInstallation=file:///{(tmpdir / 'loprofile').as_posix()}",
+                 "--headless", "--convert-to", "docx", "--outdir", str(tmpdir), str(path)],
+                capture_output=True, text=True,
+            )
+        except OSError as exc:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            return False, f"LibreOffice failed to start: {exc}"
+        if proc.returncode != 0 or not source.is_file():
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            detail = (proc.stderr or proc.stdout or "conversion failed").strip().splitlines()
+            return False, f"LibreOffice: {detail[0] if detail else 'conversion failed'}"
+
     media = out.parent / (out.stem + "_media")
     cmd = [pandoc, "--to=gfm", "--wrap=none", f"--extract-media={media}"]
     if reader:
         cmd.append(f"--from={reader}")
-    cmd += ["--output", str(out), str(path)]
+    cmd += ["--output", str(out), str(source)]
 
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True)
     except OSError as exc:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
         return False, f"pandoc failed to start: {exc}"
+    if tmpdir:
+        shutil.rmtree(tmpdir, ignore_errors=True)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "unknown error").strip().splitlines()
         return False, f"pandoc: {detail[0] if detail else 'unknown error'}"
@@ -207,6 +253,7 @@ class MarkMeApp:
         root.minsize(420, 300)
 
         self.pandoc = find_pandoc()
+        self.soffice = find_soffice()
         self.queue: list[Path] = []
         self.pumping = False
         self.ok_count = 0
@@ -297,7 +344,7 @@ class MarkMeApp:
             return
         self.pumping = True
         path, index = self.queue.pop(0)
-        ok, message = convert_file(self.pandoc, path, self.overwrite.get()) if self.pandoc else (False, "pandoc not found")
+        ok, message = convert_file(self.pandoc, self.soffice, path, self.overwrite.get()) if self.pandoc else (False, "pandoc not found")
         self.add_result(path.name, ok, message, index)
         if ok:
             self.ok_count += 1

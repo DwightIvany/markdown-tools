@@ -14,9 +14,15 @@ Inspired by [Eggy](https://github.com/DwightIvany/eggy): plain Python
 ## Requirements
 
 - Windows
-- [pandoc](https://pandoc.org/installing.html) on PATH (or in the standard
-  install location, or pointed to by the `PANDOC` environment variable)
 - Python 3.9+ (only if running the source; not needed for the exe)
+- Conversion tools, depending on what you drop in. The exe does not bundle
+  these - it finds them on PATH, in their standard install locations, or via
+  the `PANDOC` / `SOFFICE` environment variables:
+
+| To convert | Install |
+|---|---|
+| `.docx` `.odt` `.rtf` `.html` `.htm` `.epub` `.txt` `.csv` `.tsv` `.tex` `.latex` `.rst` `.org` `.textile` - and anything else pandoc can read | [pandoc](https://pandoc.org/installing.html) |
+| `.doc` (legacy Word) | [LibreOffice](https://www.libreoffice.org/download/download/) - used headlessly to turn `.doc` into `.docx`, then pandoc converts that |
 
 ## Running
 
@@ -42,6 +48,7 @@ Or double-click `markme.exe`.
 | Input | Notes |
 |---|---|
 | `.docx` `.odt` `.rtf` | Word / OpenDocument / Rich Text |
+| `.doc` | legacy Word - needs LibreOffice installed (see Requirements) |
 | `.html` `.htm` | web pages saved to disk |
 | `.epub` | ebooks |
 | `.txt` | treated as Markdown text |
@@ -53,7 +60,6 @@ Anything else pandoc can read is attempted too (pandoc guesses the format).
 ### Not supported
 
 - `.pdf` - pandoc does not read PDF. Use `software/python/convert-to-md.py`.
-- `.doc` - legacy binary Word. Open in Word/LibreOffice, save as `.docx`.
 - `.ppt` `.pptx` `.ppsx` - pandoc cannot read PowerPoint (yet).
 - `.xls` `.xlsx` - open the spreadsheet, save as `.csv`, drop the `.csv`.
 
